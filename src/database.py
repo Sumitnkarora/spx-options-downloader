@@ -56,6 +56,19 @@ class ThetaDatabase:
             )
         """)
 
+        # Create available_dates table with foreign key reference
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS available_dates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                expiration DATE NOT NULL,
+                date DATE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (symbol, expiration) REFERENCES expirations(symbol, expiration),
+                UNIQUE(symbol, expiration, date)
+            )
+        """)
+
         self.conn.commit()
         print("Database tables created successfully")
 
@@ -117,3 +130,30 @@ class ThetaDatabase:
         cursor = self.conn.cursor()
         cursor.execute("SELECT symbol, expiration FROM expirations ORDER BY symbol, expiration")
         return cursor.fetchall()
+
+    def insert_date(self, symbol: str, expiration: str, date: str):
+        """
+        Insert a quote date for a symbol and expiration.
+
+        Args:
+            symbol: The option symbol (SPX or SPXW)
+            expiration: Expiration date in YYYY-MM-DD format
+            date: Quote date in YYYY-MM-DD format
+        """
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(
+                "INSERT OR IGNORE INTO available_dates (symbol, expiration, date) VALUES (?, ?, ?)",
+                (symbol, expiration, date)
+            )
+            self.conn.commit()
+            return cursor.lastrowid
+        except sqlite3.Error as e:
+            print(f"Error inserting date {symbol} {expiration} {date}: {e}")
+            return None
+
+    def get_date_count(self) -> int:
+        """Get total count of available dates."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM available_dates")
+        return cursor.fetchone()[0]
