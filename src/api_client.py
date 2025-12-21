@@ -100,28 +100,23 @@ class ThetaDataAPI:
             "expiration": expiration_api_format
         }
 
-        try:
-            response = requests.get(url, params=params, timeout=30)
-            response.raise_for_status()
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
 
-            data_rows = self._parse_csv_response(response.text)
-            strikes = []
+        data_rows = self._parse_csv_response(response.text)
+        strikes = []
 
-            for row in data_rows:
-                if len(row) >= 2:
-                    try:
-                        strike_price = float(row[1].strip())
-                        # Store with original YYYY-MM-DD format
-                        strikes.append((symbol, expiration, strike_price))
-                    except ValueError:
-                        print(f"Invalid strike value: {row[1]}")
-                        continue
+        for row in data_rows:
+            if len(row) >= 2:
+                try:
+                    strike_price = float(row[1].strip())
+                    # Store with original YYYY-MM-DD format
+                    strikes.append((symbol, expiration, strike_price))
+                except ValueError:
+                    print(f"Invalid strike value: {row[1]}")
+                    continue
 
-            return strikes
-
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching strikes for {symbol} {expiration}: {e}")
-            return []
+        return strikes
 
     def get_dates(self, symbol: str, expiration: str) -> List[Tuple[str, str, str]]:
         """
