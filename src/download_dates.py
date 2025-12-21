@@ -5,6 +5,14 @@ Download quote dates for all expirations in the database from ThetaData.
 
 from database import ThetaDatabase
 from api_client import ThetaDataAPI
+from datetime import datetime
+
+
+def log_error(error_message: str, log_file: str = "errors.log"):
+    """Log error message to errors.log file with timestamp."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(log_file, "a") as f:
+        f.write(f"[{timestamp}] {error_message}\n")
 
 
 def main():
@@ -37,16 +45,21 @@ def main():
         for idx, (symbol, expiration) in enumerate(expirations, 1):
             print(f"\n[{idx}/{len(expirations)}] Processing: {symbol} {expiration}")
 
-            # Fetch dates for this expiration
-            dates = api.get_dates(symbol, expiration)
+            try:
+                # Fetch dates for this expiration
+                dates = api.get_dates(symbol, expiration)
 
-            if dates:
-                print(f"  Found {len(dates)} dates")
-                for date_sym, date_exp, date_value in dates:
-                    print(f"    Inserting date: {date_value}")
-                    db.insert_date(date_sym, date_exp, date_value)
-            else:
-                print(f"  No dates found")
+                if dates:
+                    print(f"  Found {len(dates)} dates")
+                    for date_sym, date_exp, date_value in dates:
+                        print(f"    Inserting date: {date_value}")
+                        db.insert_date(date_sym, date_exp, date_value)
+                else:
+                    print(f"  No dates found")
+            except Exception as e:
+                error_msg = f"Error processing {symbol} {expiration}: {e}"
+                print(f"  {error_msg}")
+                log_error(error_msg)
 
         print(f"\nDone! Total dates in database: {db.get_date_count()}")
         print(f"Database: {db.db_path}")

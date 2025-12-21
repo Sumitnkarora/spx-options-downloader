@@ -143,21 +143,16 @@ class ThetaDataAPI:
             "expiration": expiration_api_format
         }
 
-        try:
-            response = requests.get(url, params=params, timeout=30)
-            response.raise_for_status()
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
 
-            data_rows = self._parse_csv_response(response.text)
-            dates = []
+        data_rows = self._parse_csv_response(response.text)
+        dates = []
 
-            for row in data_rows:
-                if len(row) >= 1:
-                    date_value = row[0].strip()
-                    # Store with original YYYY-MM-DD format
-                    dates.append((symbol, expiration, date_value))
+        for row in data_rows:
+            if len(row) >= 1:
+                date_value = row[0].strip()
+                # Store with original YYYY-MM-DD format
+                dates.append((symbol, expiration, date_value))
 
-            return dates
-
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching dates for {symbol} {expiration}: {e}")
-            return []
+        return dates
