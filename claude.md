@@ -37,6 +37,10 @@ A Python tool that downloads SPX and SPXW options data from ThetaData API and st
    - `download_dates.py` - Downloads quote dates for each expiration
      - Has error logging: logs to `errors.log` with timestamp
      - Catches exceptions per expiration, logs symbol/expiration info, continues
+   - `retry_failed_dates.py` - Retries specific symbol/expiration combinations that failed
+     - Has error logging: logs to `errors.log` with timestamp
+     - Processes only combinations listed in FAILED_EXPIRATIONS (hardcoded in script)
+     - User edits the list before running
 
 ### Database Schema
 ```sql
@@ -49,8 +53,9 @@ available_dates: (symbol, expiration, date) - UNIQUE, FK to expirations
 1. User runs `download_expirations.py` → Populates expirations table
 2. User runs `download_strikes.py` → Reads expirations, downloads strikes
 3. User runs `download_dates.py` → Reads expirations, downloads quote dates
+4. (Optional) If downloads fail, user edits `retry_failed_dates.py` with failed combinations and runs it
 
-**Important**: Steps 2 and 3 are independent - they both depend on step 1, but not on each other.
+**Important**: Steps 2 and 3 are independent - they both depend on step 1, but not on each other. Step 4 is only needed if errors occur.
 
 ## Code Patterns
 
@@ -80,10 +85,11 @@ print(f"\nDone! Total [items] in database: {db.get_count()}")
 - **Response Format**: CSV with headers
 
 ### VS Code Debug Configurations
-All three download scripts have debug configurations in `.vscode/launch.json`:
+All download scripts have debug configurations in `.vscode/launch.json`:
 - Debug download_expirations.py
 - Debug download_strikes.py
 - Debug download_dates.py
+- Debug retry_failed_dates.py
 
 ## Important Notes
 - Always activate conda environment: `conda activate Theta`
@@ -126,6 +132,10 @@ All three download scripts have debug configurations in `.vscode/launch.json`:
 - **Add new download script**: Follow pattern from existing scripts, update launch.json
   - If adding error logging, use the pattern from strikes/dates scripts
 - **Change symbols**: Modify the `symbols` list in `download_expirations.py`
+- **Retry failed downloads**: Edit `FAILED_EXPIRATIONS` list in `retry_failed_dates.py`, then run it
+  - Check `errors.log` for failed symbol/expiration combinations
+  - Copy failed combinations into the list and save
+  - Run: `python src/retry_failed_dates.py`
 
 ## Lessons Learned
 - **Table naming**: Avoid SQL reserved keywords (changed `dates` → `available_dates`)

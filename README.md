@@ -26,7 +26,8 @@ src/
 ├── database.py             # SQLite database manager
 ├── download_expirations.py # Step 1: Download expirations
 ├── download_strikes.py     # Step 2: Download strikes
-└── download_dates.py       # Step 3: Download quote dates
+├── download_dates.py       # Step 3: Download quote dates
+└── retry_failed_dates.py   # Retry specific failed downloads
 ```
 
 ## Database Schema
@@ -92,6 +93,34 @@ python src/download_dates.py
 
 **Note:** Run `download_expirations.py` first before running this script.
 
+### Retrying Failed Downloads
+
+If some downloads fail due to timeouts or API errors, you can retry specific symbol/expiration combinations.
+
+```bash
+conda activate Theta
+python src/retry_failed_dates.py
+```
+
+**What it does:**
+- Retries downloading quote dates for specific expirations that failed
+- Uses the same error logging to `errors.log`
+- Safe to run multiple times (duplicates are ignored)
+
+**How to use:**
+1. Check `errors.log` for failed downloads
+2. Edit `src/retry_failed_dates.py` and update the `FAILED_EXPIRATIONS` list with the combinations you want to retry
+3. Run the script
+
+**Example:**
+```python
+FAILED_EXPIRATIONS = [
+    ("SPXW", "2019-07-08"),
+    ("SPXW", "2019-07-10"),
+    ("SPX", "2012-06-16"),
+]
+```
+
 ## Running Individual Scripts
 
 Each script can be run independently as long as the prerequisites are met.
@@ -128,6 +157,7 @@ The project includes VS Code debug configurations for each script:
    - `Debug download_expirations.py`
    - `Debug download_strikes.py`
    - `Debug download_dates.py`
+   - `Debug retry_failed_dates.py`
 4. Press F5 to start debugging
 
 ## Error Handling
