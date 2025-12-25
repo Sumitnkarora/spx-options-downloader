@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Download strikes for all expirations in the database from ThetaData.
+Download quote dates for all expirations in the database from ThetaData.
 """
 
 from database import ThetaDatabase
@@ -16,7 +16,7 @@ def log_error(error_message: str, log_file: str = "errors.log"):
 
 
 def main():
-    print("Starting strikes downloader...", flush=True)
+    print("Starting dates downloader...", flush=True)
 
     # Initialize database
     print("Connecting to database...", flush=True)
@@ -46,27 +46,27 @@ def main():
             print(f"\n[{idx}/{len(expirations)}] Processing: {symbol} {expiration}")
 
             try:
-                # Fetch strikes for this expiration
-                strikes = api.get_strikes(symbol, expiration)
+                # Fetch dates for this expiration
+                dates = api.get_dates(symbol, expiration)
 
-                if strikes:
-                    print(f"  Found {len(strikes)} strikes")
-                    for strike_sym, strike_exp, strike_price in strikes:
-                        print(f"    Inserting strike: {strike_price}")
-                        db.insert_strike(strike_sym, strike_exp, strike_price)
+                if dates:
+                    print(f"  Found {len(dates)} dates")
+                    for date_sym, date_exp, date_value in dates:
+                        print(f"    Inserting date: {date_value}")
+                        db.insert_date(date_sym, date_exp, date_value)
                 else:
-                    print(f"  No strikes found")
+                    print(f"  No dates found")
             except Exception as e:
                 error_msg = f"Error processing {symbol} {expiration}: {e}"
                 print(f"  {error_msg}")
                 log_error(error_msg)
 
-        print(f"\nDone! Total strikes in database: {db.get_strike_count()}")
+        print(f"\nDone! Total dates in database: {db.get_date_count()}")
         print(f"Database: {db.db_path}")
 
     except KeyboardInterrupt:
         print("\nInterrupted by user")
-        print(f"Partial progress - Strikes in database: {db.get_strike_count()}")
+        print(f"Partial progress - Dates in database: {db.get_date_count()}")
     except Exception as e:
         print(f"\nError: {e}")
     finally:
