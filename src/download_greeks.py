@@ -42,7 +42,7 @@ def get_file_path(symbol: str, expiration: str, date: str) -> str:
     date_formatted = date.replace("-", "")
 
     # Build path
-    base_dir = "data"
+    base_dir = "/Volumes/X9/data"
     symbol_dir = os.path.join(base_dir, symbol)
     year_dir = os.path.join(symbol_dir, year)
     month_dir = os.path.join(year_dir, month)
