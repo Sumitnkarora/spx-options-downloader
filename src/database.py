@@ -315,3 +315,19 @@ class ThetaDatabase:
         stats['total'] = cursor.fetchone()[0]
 
         return stats
+
+    def update_compressed_file_path(self, row_id: int, file_path: str):
+        """
+        Store the compressed file path for a row.
+
+        Args:
+            row_id: The row ID to update
+            file_path: Full path to the compressed .zst file
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            UPDATE available_dates
+            SET compressed_file_path = ?
+            WHERE id = ?
+        """, (file_path, row_id))
+        self.conn.commit()

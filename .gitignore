@@ -40,6 +40,15 @@ env/
 *.sqlite3
 database/*.db
 
+# Data files
+*.csv
+*.csv.zst
+data/
+errors.log
+
+# Configuration (user-specific)
+config.ini
+
 # IDE
 .vscode/
 .idea/

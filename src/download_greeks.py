@@ -12,6 +12,8 @@ from datetime import datetime
 import os
 import signal
 import sys
+import configparser
+import zstandard as zstd
 
 
 def log_error(error_message: str, log_file: str = "errors.log"):
@@ -21,7 +23,7 @@ def log_error(error_message: str, log_file: str = "errors.log"):
         f.write(f"[{timestamp}] {error_message}\n")
 
 
-def get_file_path(symbol: str, expiration: str, date: str) -> str:
+def get_file_path(symbol: str, expiration: str, date: str, base_dir: str, interval: str) -> str:
     """
     Generate file path for Greeks data with monthly organization.
 
@@ -29,9 +31,11 @@ def get_file_path(symbol: str, expiration: str, date: str) -> str:
         symbol: Option symbol (SPX or SPXW)
         expiration: Expiration date in YYYY-MM-DD format
         date: Quote date in YYYY-MM-DD format
+        base_dir: Base directory path for data storage
+        interval: Data interval (e.g., "5s", "1m")
 
     Returns:
-        File path: data/{symbol}/{year}/{month}/{symbol}_{expiration}_{date}_5s.csv
+        File path: {base_dir}/{symbol}/{year}/{month}/{symbol}_{expiration}_{date}_{interval}.csv
     """
     # Extract year and month from quote date
     year = date[:4]
@@ -42,11 +46,10 @@ def get_file_path(symbol: str, expiration: str, date: str) -> str:
     date_formatted = date.replace("-", "")
 
     # Build path
-    base_dir = "/Volumes/X9/data"
     symbol_dir = os.path.join(base_dir, symbol)
     year_dir = os.path.join(symbol_dir, year)
     month_dir = os.path.join(year_dir, month)
-    filename = f"{symbol}_{exp_formatted}_{date_formatted}_5s.csv"
+    filename = f"{symbol}_{exp_formatted}_{date_formatted}_{interval}.csv"
 
     # Create directory if needed (thread-safe)
     os.makedirs(month_dir, exist_ok=True)
@@ -57,13 +60,17 @@ def get_file_path(symbol: str, expiration: str, date: str) -> str:
 class GreeksDownloader:
     """Simple downloader for Greeks history data."""
 
-    def __init__(self, max_retries: int = 3):
+    def __init__(self, base_dir: str = "/Volumes/X9/data", interval: str = "5s", max_retries: int = 3):
         """
         Initialize downloader.
 
         Args:
+            base_dir: Base directory path for data storage (default: /Volumes/X9/data)
+            interval: Data interval (default: 5s)
             max_retries: Maximum retry attempts per download (default: 3)
         """
+        self.base_dir = base_dir
+        self.interval = interval
         self.max_retries = max_retries
         self.db = None
         self.api = None
@@ -130,17 +137,37 @@ class GreeksDownloader:
 
                 try:
                     # Download Greeks data
-                    csv_data = self.api.get_greeks_history(symbol, expiration, date)
+                    csv_data = self.api.get_greeks_history(symbol, expiration, date, self.interval)
 
                     # Generate file path
-                    file_path = get_file_path(symbol, expiration, date)
+                    file_path = get_file_path(symbol, expiration, date, self.base_dir, self.interval)
 
-                    # Write to file
+                    # Write CSV to file (temporary)
                     with open(file_path, 'w', encoding='utf-8') as f:
                         f.write(csv_data)
 
-                    file_size = os.path.getsize(file_path)
-                    print(f"  Saved: {file_path} ({file_size:,} bytes)", flush=True)
+                    csv_size = os.path.getsize(file_path)
+                    print(f"  Saved CSV: {file_path} ({csv_size:,} bytes)", flush=True)
+
+                    # Compress the file with zstd level 10
+                    compressed_path = file_path + ".zst"
+                    print(f"  Compressing...", flush=True)
+
+                    cctx = zstd.ZstdCompressor(level=10)
+                    with open(file_path, 'rb') as input_file:
+                        with open(compressed_path, 'wb') as compressed_file:
+                            cctx.copy_stream(input_file, compressed_file)
+
+                    compressed_size = os.path.getsize(compressed_path)
+                    compression_ratio = csv_size / compressed_size if compressed_size > 0 else 0
+                    print(f"  Compressed: {compressed_path} ({compressed_size:,} bytes, {compression_ratio:.1f}x)", flush=True)
+
+                    # Delete original CSV file
+                    os.remove(file_path)
+                    print(f"  Deleted original CSV", flush=True)
+
+                    # Store compressed file path in database
+                    self.db.update_compressed_file_path(row_id, compressed_path)
 
                     # Mark as completed
                     self.db.mark_completed(row_id)
@@ -191,9 +218,66 @@ class GreeksDownloader:
                 self.db.close()
 
 
+def load_config(config_path: str = "config.ini"):
+    """
+    Load configuration from config file.
+
+    Args:
+        config_path: Path to config file (default: config.ini)
+
+    Returns:
+        Dictionary with configuration settings
+    """
+    config = configparser.ConfigParser()
+
+    # Default values
+    defaults = {
+        'base_dir': '/Volumes/X9/data',
+        'interval': '5s',
+        'max_retries': 3
+    }
+
+    # Try to read config file
+    if os.path.exists(config_path):
+        config.read(config_path)
+        if 'download' in config:
+            base_dir = config.get('download', 'base_dir', fallback=defaults['base_dir'])
+            interval = config.get('download', 'interval', fallback=defaults['interval'])
+            max_retries = config.getint('download', 'max_retries', fallback=defaults['max_retries'])
+        else:
+            print(f"Warning: No [download] section in {config_path}, using defaults", flush=True)
+            base_dir = defaults['base_dir']
+            interval = defaults['interval']
+            max_retries = defaults['max_retries']
+    else:
+        print(f"Warning: Config file {config_path} not found, using defaults", flush=True)
+        base_dir = defaults['base_dir']
+        interval = defaults['interval']
+        max_retries = defaults['max_retries']
+
+    return {
+        'base_dir': base_dir,
+        'interval': interval,
+        'max_retries': max_retries
+    }
+
+
 def main():
     """Main entry point."""
-    downloader = GreeksDownloader(max_retries=3)
+    # Load configuration from config.ini
+    config = load_config("config.ini")
+
+    print(f"Configuration (from config.ini):", flush=True)
+    print(f"  Base directory: {config['base_dir']}", flush=True)
+    print(f"  Interval: {config['interval']}", flush=True)
+    print(f"  Max retries: {config['max_retries']}", flush=True)
+    print("", flush=True)
+
+    downloader = GreeksDownloader(
+        base_dir=config['base_dir'],
+        interval=config['interval'],
+        max_retries=config['max_retries']
+    )
     downloader.run()
 
 

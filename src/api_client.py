@@ -152,7 +152,7 @@ class ThetaDataAPI:
 
         return dates
 
-    def get_greeks_history(self, symbol: str, expiration: str, date: str) -> str:
+    def get_greeks_history(self, symbol: str, expiration: str, date: str, interval: str = "5s") -> str:
         """
         Fetch Greeks history data for a given symbol, expiration, and date.
 
@@ -160,6 +160,7 @@ class ThetaDataAPI:
             symbol: Option symbol (SPX or SPXW)
             expiration: Expiration date in YYYY-MM-DD format
             date: Quote date in YYYY-MM-DD format
+            interval: Data interval (default: "5s", options: "1s", "5s", "10s", "15s", "30s", "1m", "5m", etc.)
 
         Returns:
             Raw CSV string containing Greeks data
@@ -176,7 +177,7 @@ class ThetaDataAPI:
             "symbol": symbol,
             "expiration": expiration_api_format,
             "date": date_api_format,
-            "interval": "5s"
+            "interval": interval
         }
 
         response = requests.get(url, params=params, timeout=30)
