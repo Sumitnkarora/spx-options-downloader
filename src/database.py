@@ -157,3 +157,161 @@ class ThetaDatabase:
         cursor = self.conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM available_dates")
         return cursor.fetchone()[0]
+
+    def set_busy_timeout(self, timeout_ms: int = 30000):
+        """
+        Set SQLite busy timeout for handling concurrent access.
+
+        Args:
+            timeout_ms: Timeout in milliseconds (default: 30 seconds)
+        """
+        self.conn.execute(f"PRAGMA busy_timeout = {timeout_ms}")
+
+    def claim_next_row(self, max_retries: int = 3) -> Tuple[int, str, str, str]:
+        """
+        Atomically claim next pending row for processing.
+
+        Args:
+            max_retries: Maximum number of retries allowed
+
+        Returns:
+            Tuple of (row_id, symbol, expiration, date) or None if no rows available
+        """
+        cursor = self.conn.cursor()
+        try:
+            # Begin immediate transaction to acquire write lock
+            self.conn.execute("BEGIN IMMEDIATE")
+
+            # Find next available row (latest first)
+            cursor.execute("""
+                SELECT id, symbol, expiration, date
+                FROM available_dates
+                WHERE status = 'pending' AND retry_count < ?
+                ORDER BY expiration DESC, date DESC
+                LIMIT 1
+            """, (max_retries,))
+
+            row = cursor.fetchone()
+            if not row:
+                self.conn.rollback()
+                return None
+
+            row_id, symbol, expiration, date = row
+
+            # Claim the row
+            cursor.execute("""
+                UPDATE available_dates
+                SET status = 'in_progress',
+                    started_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (row_id,))
+
+            self.conn.commit()
+            return (row_id, symbol, expiration, date)
+
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            raise
+
+    def mark_completed(self, row_id: int):
+        """
+        Mark a row as successfully completed.
+
+        Args:
+            row_id: The row ID to mark as completed
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            UPDATE available_dates
+            SET status = 'completed',
+                completed_at = CURRENT_TIMESTAMP,
+                error_message = NULL
+            WHERE id = ?
+        """, (row_id,))
+        self.conn.commit()
+
+    def mark_failed(self, row_id: int, error_msg: str, max_retries: int = 3):
+        """
+        Mark a row as failed and increment retry count.
+
+        Args:
+            row_id: The row ID to mark as failed
+            error_msg: Error message to store
+            max_retries: Maximum retries before marking permanently failed
+
+        Returns:
+            The new status ('pending' if will retry, 'failed' if giving up)
+        """
+        cursor = self.conn.cursor()
+
+        # Get current retry count
+        cursor.execute("SELECT retry_count FROM available_dates WHERE id = ?", (row_id,))
+        result = cursor.fetchone()
+        if not result:
+            return None
+
+        retry_count = result[0]
+        new_retry_count = retry_count + 1
+        new_status = 'failed' if new_retry_count >= max_retries else 'pending'
+
+        cursor.execute("""
+            UPDATE available_dates
+            SET status = ?,
+                retry_count = ?,
+                error_message = ?,
+                completed_at = CASE WHEN ? = 'failed' THEN CURRENT_TIMESTAMP ELSE NULL END
+            WHERE id = ?
+        """, (new_status, new_retry_count, error_msg, new_status, row_id))
+
+        self.conn.commit()
+        return new_status
+
+    def reset_stuck_rows(self, timeout_minutes: int = 30) -> int:
+        """
+        Reset rows stuck in 'in_progress' state back to pending.
+
+        Args:
+            timeout_minutes: How long a row can be in_progress before considered stuck
+
+        Returns:
+            Number of rows reset
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            UPDATE available_dates
+            SET status = 'pending',
+                error_message = 'Reset from stuck in_progress state'
+            WHERE status = 'in_progress'
+            AND started_at < datetime('now', '-' || ? || ' minutes')
+        """, (timeout_minutes,))
+
+        reset_count = cursor.rowcount
+        self.conn.commit()
+
+        return reset_count
+
+    def get_download_stats(self) -> dict:
+        """
+        Get download statistics by status.
+
+        Returns:
+            Dictionary with counts for each status
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT
+                COALESCE(status, 'pending') as status,
+                COUNT(*) as count
+            FROM available_dates
+            GROUP BY status
+        """)
+
+        stats = {}
+        for status, count in cursor.fetchall():
+            stats[status] = count
+
+        # Get total
+        cursor.execute("SELECT COUNT(*) FROM available_dates")
+        stats['total'] = cursor.fetchone()[0]
+
+        return stats

@@ -151,3 +151,35 @@ class ThetaDataAPI:
                 dates.append((symbol, expiration, date_value))
 
         return dates
+
+    def get_greeks_history(self, symbol: str, expiration: str, date: str) -> str:
+        """
+        Fetch Greeks history data for a given symbol, expiration, and date.
+
+        Args:
+            symbol: Option symbol (SPX or SPXW)
+            expiration: Expiration date in YYYY-MM-DD format
+            date: Quote date in YYYY-MM-DD format
+
+        Returns:
+            Raw CSV string containing Greeks data
+
+        Raises:
+            requests.exceptions.RequestException: On API errors
+        """
+        # Convert dates from YYYY-MM-DD to YYYYMMDD for API call
+        expiration_api_format = self._convert_date_to_api_format(expiration)
+        date_api_format = self._convert_date_to_api_format(date)
+
+        url = f"{self.base_url}/v3/option/history/greeks/all"
+        params = {
+            "symbol": symbol,
+            "expiration": expiration_api_format,
+            "date": date_api_format,
+            "interval": "5s"
+        }
+
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
+
+        return response.text
