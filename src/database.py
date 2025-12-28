@@ -62,10 +62,10 @@ class ThetaDatabase:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT NOT NULL,
                 expiration DATE NOT NULL,
-                date DATE NOT NULL,
+                trade_date DATE NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (symbol, expiration) REFERENCES expirations(symbol, expiration),
-                UNIQUE(symbol, expiration, date)
+                UNIQUE(symbol, expiration, trade_date)
             )
         """)
 
@@ -131,25 +131,25 @@ class ThetaDatabase:
         cursor.execute("SELECT symbol, expiration FROM expirations ORDER BY symbol, expiration")
         return cursor.fetchall()
 
-    def insert_date(self, symbol: str, expiration: str, date: str):
+    def insert_date(self, symbol: str, expiration: str, trade_date: str):
         """
         Insert a quote date for a symbol and expiration.
 
         Args:
             symbol: The option symbol (SPX or SPXW)
             expiration: Expiration date in YYYY-MM-DD format
-            date: Quote date in YYYY-MM-DD format
+            trade_date: Quote date in YYYY-MM-DD format
         """
         cursor = self.conn.cursor()
         try:
             cursor.execute(
-                "INSERT OR IGNORE INTO available_dates (symbol, expiration, date) VALUES (?, ?, ?)",
-                (symbol, expiration, date)
+                "INSERT OR IGNORE INTO available_dates (symbol, expiration, trade_date) VALUES (?, ?, ?)",
+                (symbol, expiration, trade_date)
             )
             self.conn.commit()
             return cursor.lastrowid
         except sqlite3.Error as e:
-            print(f"Error inserting date {symbol} {expiration} {date}: {e}")
+            print(f"Error inserting date {symbol} {expiration} {trade_date}: {e}")
             return None
 
     def get_date_count(self) -> int:
@@ -175,7 +175,7 @@ class ThetaDatabase:
             max_retries: Maximum number of retries allowed
 
         Returns:
-            Tuple of (row_id, symbol, expiration, date) or None if no rows available
+            Tuple of (row_id, symbol, expiration, trade_date) or None if no rows available
         """
         cursor = self.conn.cursor()
         try:
@@ -184,10 +184,10 @@ class ThetaDatabase:
 
             # Find next available row (latest first)
             cursor.execute("""
-                SELECT id, symbol, expiration, date
+                SELECT id, symbol, expiration, trade_date
                 FROM available_dates
                 WHERE status = 'pending' AND retry_count < ?
-                ORDER BY expiration DESC, date DESC
+                ORDER BY expiration DESC, trade_date DESC
                 LIMIT 1
             """, (max_retries,))
 
@@ -196,7 +196,7 @@ class ThetaDatabase:
                 self.conn.rollback()
                 return None
 
-            row_id, symbol, expiration, date = row
+            row_id, symbol, expiration, trade_date = row
 
             # Claim the row
             cursor.execute("""
@@ -207,7 +207,7 @@ class ThetaDatabase:
             """, (row_id,))
 
             self.conn.commit()
-            return (row_id, symbol, expiration, date)
+            return (row_id, symbol, expiration, trade_date)
 
         except sqlite3.Error as e:
             self.conn.rollback()
@@ -315,3 +315,19 @@ class ThetaDatabase:
         stats['total'] = cursor.fetchone()[0]
 
         return stats
+
+    def update_compressed_file_path(self, row_id: int, file_path: str):
+        """
+        Store the compressed file path for a row.
+
+        Args:
+            row_id: The row ID to update
+            file_path: Full path to the compressed .zst file
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            UPDATE available_dates
+            SET compressed_file_path = ?
+            WHERE id = ?
+        """, (file_path, row_id))
+        self.conn.commit()
