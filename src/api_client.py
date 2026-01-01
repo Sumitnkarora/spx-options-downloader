@@ -178,6 +178,7 @@ class ThetaDataAPI:
             "expiration": expiration_api_format,
             "date": date_api_format,
             "interval": interval
+            "interval": interval
         }
 
         response = requests.get(url, params=params, timeout=30)
