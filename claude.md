@@ -10,8 +10,7 @@ A Python tool that downloads SPX and SPXW options data from ThetaData API and st
 - **Database**: `database/theta_options.db` (SQLite)
 - **Data Storage**: `/Volumes/X9/data/` (External SSD for Greeks data)
 - **Dependencies**: `requests==2.31.0`, `zstandard==0.22.0`
-- **Data Storage**: `/Volumes/X9/data/` (External SSD for Greeks data)
-- **Dependencies**: `requests==2.31.0`, `zstandard==0.22.0`
+- **Configuration**: `config.ini` (user-specific settings, not in git)
 
 ## Architecture
 
@@ -124,20 +123,42 @@ available_dates: (symbol, expiration, trade_date) - UNIQUE, FK to expirations
     - compressed_file_path TEXT (full path to .csv.zst file)
 ```
 
+## Configuration
+
+The project uses `config.ini` for user-specific settings. This file is not tracked in git (see `.gitignore`).
+
+### config.ini Settings
+
+```ini
+[download]
+# Base directory for storing downloaded Greeks data
+base_dir = /Volumes/X9/data
+
+# Data interval for Greeks history
+# Options: 1s, 5s, 10s, 15s, 30s, 1m, 5m, 15m, 30m, 1h
+interval = 1m
+
+# Maximum retry attempts per download
+max_retries = 3
+
+# API timeout settings (in seconds)
+# Increase these if you get RST_STREAM or timeout errors
+timeout_default = 30        # For expirations, strikes, dates (list endpoints)
+timeout_greeks = 120        # For Greeks history (bulk data downloads)
+```
+
+**Configuration Notes:**
+- `base_dir`: Where compressed .zst files are stored (organized by symbol/year/month)
+- `interval`: Greeks data interval (affects file size and API response time)
+- `max_retries`: How many times to retry failed downloads before marking as permanently failed
+- `timeout_default`: Timeout for lightweight list endpoints (30s is usually sufficient)
+- `timeout_greeks`: Timeout for bulk Greeks downloads (120s recommended, increase if getting timeout errors)
+- To create your config: `cp config.ini.example config.ini` then edit as needed
+
 ## Execution Workflow
 1. User runs `download_expirations.py` → Populates expirations table
 2. User runs `download_strikes.py` → Reads expirations, downloads strikes
 3. User runs `download_dates.py` → Reads expirations, downloads quote dates
-4. User runs `migrate_database.py` → Adds download tracking columns (one-time setup)
-5. User runs `migrate_compression.py` → Adds compression column (one-time setup)
-6. User runs `download_greeks.py` (in 1-8 terminals) → Downloads and compresses Greeks data
-7. (Optional) If downloads fail, user resets failed rows via SQL and re-runs
-
-**Important**:
-- Steps 2 and 3 are independent - they both depend on step 1, but not on each other
-- Steps 4-5 are one-time migrations (safe to run multiple times, idempotent)
-- Step 6 can be run with multiple concurrent processes
-- Step 7 uses SQL queries to reset status (see README.md for queries)
 4. User runs `migrate_database.py` → Adds download tracking columns (one-time setup)
 5. User runs `migrate_compression.py` → Adds compression column (one-time setup)
 6. User runs `download_greeks.py` (in 1-8 terminals) → Downloads and compresses Greeks data
@@ -174,7 +195,10 @@ print(f"\nDone! Total [items] in database: {db.get_count()}")
 - **Request Type**: Only downloads `quote` data (not `trade` data)
 - **Symbols**: SPX and SPXW
 - **Date Format**: API requires YYYYMMDD, but we store YYYY-MM-DD in database
-- **Timeout**: 30 seconds per request
+- **Timeouts**: Configurable via config.ini
+  - `timeout_default`: 30s for list endpoints (expirations, strikes, dates)
+  - `timeout_greeks`: 120s for Greeks history (bulk data)
+  - Increase `timeout_greeks` if you get RST_STREAM or timeout errors
 - **Response Format**: CSV with headers
 
 ### VS Code Debug Configurations
@@ -183,22 +207,7 @@ All download scripts have debug configurations in `.vscode/launch.json`:
 - Debug download_strikes.py
 - Debug download_dates.py
 - Debug download_greeks.py
-- Debug download_greeks.py
 - Debug retry_failed_dates.py
-
-### Compression Details
-- **Library**: zstandard (Python library)
-- **Compression level**: 10 (good balance of speed vs size)
-- **Typical compression ratios**: 40-100x (depends on data density)
-- **File naming**: Original `.csv` becomes `.csv.zst`
-- **Space savings**: 147K files → ~6GB compressed vs ~295GB uncompressed
-- **Process flow**:
-  1. Download CSV from API
-  2. Save CSV to disk temporarily
-  3. Compress with zstd level 10
-  4. Delete original CSV
-  5. Store .zst path in database
-- **Decompression**: `zstd -d filename.csv.zst` or `zstd -d -c filename.csv.zst | head`
 
 ### Compression Details
 - **Library**: zstandard (Python library)
@@ -258,14 +267,14 @@ All download scripts have debug configurations in `.vscode/launch.json`:
 - **Add new API endpoint**: Follow pattern in `api_client.py` (convert dates, parse CSV)
   - Decide if exceptions should be caught (like expirations) or raised (like strikes/dates/greeks)
   - For bulk data downloads, return raw CSV instead of parsing (like greeks)
-  - Decide if exceptions should be caught (like expirations) or raised (like strikes/dates/greeks)
-  - For bulk data downloads, return raw CSV instead of parsing (like greeks)
 - **Add new table**: Update `create_tables()` in `database.py`, add insert/get methods
   - Avoid SQL reserved keywords for table names (e.g., use `available_dates` not `dates`)
 - **Add new download script**: Follow pattern from existing scripts, update launch.json
   - If adding error logging, use the pattern from strikes/dates/greeks scripts
-  - If adding error logging, use the pattern from strikes/dates/greeks scripts
 - **Change symbols**: Modify the `symbols` list in `download_expirations.py`
+- **Adjust API timeouts**: Edit `config.ini` to change timeout values
+  - Increase `timeout_greeks` (e.g., to 180 or 240) if getting RST_STREAM or timeout errors
+  - Restart download_greeks.py after changing config.ini
 - **Retry failed Greeks downloads**: Use SQL to reset failed rows to pending
   - Check `errors.log` for error patterns
   - Reset all failed: See README.md for SQL queries
@@ -273,7 +282,7 @@ All download scripts have debug configurations in `.vscode/launch.json`:
 - **Monitor Greeks download progress**: Query database status
   - `SELECT status, COUNT(*) FROM available_dates GROUP BY status;`
   - See README.md for more monitoring queries
-- **Change download location**: Edit `base_dir` in `download_greeks.py` get_file_path() function
+- **Change download location**: Edit `base_dir` in config.ini (preferred) or edit `download_greeks.py` get_file_path() function
 - **Adjust compression level**: Change `level=10` in `download_greeks.py` ZstdCompressor
 - **Increase concurrent processes**: Simply open more terminals and run download_greeks.py
   - Each process safely claims different rows via database locking
@@ -283,24 +292,12 @@ All download scripts have debug configurations in `.vscode/launch.json`:
 - **Error handling**: Two patterns exist:
   1. API client catches exceptions, returns [] (expirations)
   2. API client raises exceptions, download script catches and logs (strikes, dates, greeks)
-  2. API client raises exceptions, download script catches and logs (strikes, dates, greeks)
 - **Minimal code impact**: Keep error logging simple - one function, try-except around loop
 - **Be explicit**: Only implement changes that are explicitly requested
-- **Multi-process downloads**: Simple independent processes work better than threading
-  - SQLite handles concurrency via BEGIN IMMEDIATE transactions
-  - No need for locks, queues, or complex coordination
-  - Each process just claims next row atomically
-- **Compression timing**: Compress BEFORE marking completed
-  - Ensures database only tracks successfully compressed files
-  - Delete original CSV after compression succeeds
-  - Store compressed path before marking complete
-- **File organization**: Monthly folders prevent directory with 100K+ files
-  - Easier to navigate and manage
-  - Better filesystem performance
-- **Resume capability**: Database state tracking enables safe resume
-  - Stuck rows auto-reset on next run
-  - Ctrl+C doesn't lose progress
-  - Can stop/start individual processes anytime
+- **Configurable timeouts**: Make API timeouts configurable via config.ini
+  - Different endpoints need different timeouts (list vs bulk data)
+  - Greeks history needs longer timeout (120s+) due to large CSV responses
+  - RST_STREAM errors often indicate timeout too low, not API issues
 - **Multi-process downloads**: Simple independent processes work better than threading
   - SQLite handles concurrency via BEGIN IMMEDIATE transactions
   - No need for locks, queues, or complex coordination

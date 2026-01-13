@@ -6,9 +6,18 @@ from io import StringIO
 
 
 class ThetaDataAPI:
-    def __init__(self, base_url: str = "http://localhost:25503"):
-        """Initialize ThetaData API client."""
+    def __init__(self, base_url: str = "http://localhost:25503", timeout_default: int = 30, timeout_greeks: int = 120):
+        """
+        Initialize ThetaData API client.
+
+        Args:
+            base_url: ThetaData API base URL
+            timeout_default: Timeout in seconds for list endpoints (expirations, strikes, dates)
+            timeout_greeks: Timeout in seconds for Greeks history bulk data downloads
+        """
         self.base_url = base_url
+        self.timeout_default = timeout_default
+        self.timeout_greeks = timeout_greeks
 
     def _convert_date_to_api_format(self, date_str: str) -> str:
         """
@@ -62,7 +71,7 @@ class ThetaDataAPI:
         params = {"symbol": symbol}
 
         try:
-            response = requests.get(url, params=params, timeout=30)
+            response = requests.get(url, params=params, timeout=self.timeout_default)
             response.raise_for_status()
 
             data_rows = self._parse_csv_response(response.text)
@@ -100,7 +109,7 @@ class ThetaDataAPI:
             "expiration": expiration_api_format
         }
 
-        response = requests.get(url, params=params, timeout=30)
+        response = requests.get(url, params=params, timeout=self.timeout_default)
         response.raise_for_status()
 
         data_rows = self._parse_csv_response(response.text)
@@ -138,7 +147,7 @@ class ThetaDataAPI:
             "expiration": expiration_api_format
         }
 
-        response = requests.get(url, params=params, timeout=30)
+        response = requests.get(url, params=params, timeout=self.timeout_default)
         response.raise_for_status()
 
         data_rows = self._parse_csv_response(response.text)
@@ -178,10 +187,9 @@ class ThetaDataAPI:
             "expiration": expiration_api_format,
             "date": date_api_format,
             "interval": interval
-            "interval": interval
         }
 
-        response = requests.get(url, params=params, timeout=30)
+        response = requests.get(url, params=params, timeout=self.timeout_greeks)
         response.raise_for_status()
 
         return response.text
