@@ -6,9 +6,18 @@ from io import StringIO
 
 
 class ThetaDataAPI:
-    def __init__(self, base_url: str = "http://localhost:25503"):
-        """Initialize ThetaData API client."""
+    def __init__(self, base_url: str = "http://localhost:25503", timeout_default: int = 30, timeout_greeks: int = 120):
+        """
+        Initialize ThetaData API client.
+
+        Args:
+            base_url: ThetaData API base URL
+            timeout_default: Timeout in seconds for list endpoints (expirations, strikes, dates)
+            timeout_greeks: Timeout in seconds for Greeks history bulk data downloads
+        """
         self.base_url = base_url
+        self.timeout_default = timeout_default
+        self.timeout_greeks = timeout_greeks
 
     def _convert_date_to_api_format(self, date_str: str) -> str:
         """
@@ -62,7 +71,7 @@ class ThetaDataAPI:
         params = {"symbol": symbol}
 
         try:
-            response = requests.get(url, params=params, timeout=30)
+            response = requests.get(url, params=params, timeout=self.timeout_default)
             response.raise_for_status()
 
             data_rows = self._parse_csv_response(response.text)
@@ -100,7 +109,7 @@ class ThetaDataAPI:
             "expiration": expiration_api_format
         }
 
-        response = requests.get(url, params=params, timeout=30)
+        response = requests.get(url, params=params, timeout=self.timeout_default)
         response.raise_for_status()
 
         data_rows = self._parse_csv_response(response.text)
@@ -127,7 +136,7 @@ class ThetaDataAPI:
             expiration: Expiration date in YYYY-MM-DD format
 
         Returns:
-            List of tuples (symbol, expiration, date)
+            List of tuples (symbol, expiration, trade_date)
         """
         # Convert date from YYYY-MM-DD to YYYYMMDD for API call
         expiration_api_format = self._convert_date_to_api_format(expiration)
@@ -138,7 +147,7 @@ class ThetaDataAPI:
             "expiration": expiration_api_format
         }
 
-        response = requests.get(url, params=params, timeout=30)
+        response = requests.get(url, params=params, timeout=self.timeout_default)
         response.raise_for_status()
 
         data_rows = self._parse_csv_response(response.text)
@@ -151,3 +160,36 @@ class ThetaDataAPI:
                 dates.append((symbol, expiration, date_value))
 
         return dates
+
+    def get_greeks_history(self, symbol: str, expiration: str, trade_date: str, interval: str = "5s") -> str:
+        """
+        Fetch Greeks history data for a given symbol, expiration, and date.
+
+        Args:
+            symbol: Option symbol (SPX or SPXW)
+            expiration: Expiration date in YYYY-MM-DD format
+            trade_date: Quote date in YYYY-MM-DD format
+            interval: Data interval (default: "5s", options: "1s", "5s", "10s", "15s", "30s", "1m", "5m", etc.)
+
+        Returns:
+            Raw CSV string containing Greeks data
+
+        Raises:
+            requests.exceptions.RequestException: On API errors
+        """
+        # Convert dates from YYYY-MM-DD to YYYYMMDD for API call
+        expiration_api_format = self._convert_date_to_api_format(expiration)
+        date_api_format = self._convert_date_to_api_format(trade_date)
+
+        url = f"{self.base_url}/v3/option/history/greeks/all"
+        params = {
+            "symbol": symbol,
+            "expiration": expiration_api_format,
+            "date": date_api_format,
+            "interval": interval
+        }
+
+        response = requests.get(url, params=params, timeout=self.timeout_greeks)
+        response.raise_for_status()
+
+        return response.text

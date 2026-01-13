@@ -51,9 +51,9 @@ def main():
 
                 if dates:
                     print(f"  Found {len(dates)} dates")
-                    for date_sym, date_exp, date_value in dates:
-                        print(f"    Inserting date: {date_value}")
-                        db.insert_date(date_sym, date_exp, date_value)
+                    for trade_date_sym, trade_date_exp, trade_date_value in dates:
+                        print(f"    Inserting date: {trade_date_value}")
+                        db.insert_date(trade_date_sym, trade_date_exp, trade_date_value)
                 else:
                     print(f"  No dates found")
             except Exception as e:

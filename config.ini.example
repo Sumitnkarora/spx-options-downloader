@@ -1,0 +1,15 @@
+[download]
+# Base directory for storing downloaded Greeks data
+base_dir = /Volumes/X9/data
+
+# Data interval for Greeks history
+# Options: 1s, 5s, 10s, 15s, 30s, 1m, 5m, 15m, 30m, 1h
+interval = 1m
+
+# Maximum retry attempts per download
+max_retries = 3
+
+# API timeout settings (in seconds)
+# Increase these if you get RST_STREAM or timeout errors
+timeout_default = 30
+timeout_greeks = 120
